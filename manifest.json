@@ -5,7 +5,7 @@
     "optional": [],
     "js": "index.js",
     "author": "soromolly",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "description": "Автоматически перезапускает генерацию при ошибках, разрыве соединения или цензуре Google Vertex AI.",
     "homePage": "",
     "auto_update": false,
