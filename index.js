@@ -3,13 +3,14 @@ import * as slashModule from '/scripts/slash-commands.js';
 
 const MODULE_NAME = 'vertex_auto_retry';
 let retryCount = 0;
-const MAX_RETRIES = 5;
 let isTimeoutActive = false;
 let userAborted = false;
 
+// Настройки по умолчанию (теперь лимит попыток динамический)
 let settings = {
     enabled: true,
-    interval: 5
+    interval: 5,
+    maxRetries: 3
 };
 
 function loadSettings() {
@@ -67,8 +68,9 @@ function handleFailureDetected(reasonText) {
         return;
     }
 
-    if (retryCount >= MAX_RETRIES) {
-        console.warn(`[${MODULE_NAME}] Превышен лимит автоповторов (${MAX_RETRIES}).`);
+    // Проверка лимита на основе настроек из интерфейса
+    if (retryCount >= settings.maxRetries) {
+        console.warn(`[${MODULE_NAME}] Превышен лимит автоповторов (${settings.maxRetries}).`);
         retryCount = 0;
         return;
     }
@@ -76,7 +78,7 @@ function handleFailureDetected(reasonText) {
     retryCount++;
     isTimeoutActive = true;
 
-    console.log(`[${MODULE_NAME}] ПЕРЕХВАТ СБОЯ: ${reasonText}. Попытка ${retryCount}/${MAX_RETRIES}. Ждем ${settings.interval} сек...`);
+    console.log(`[${MODULE_NAME}] ПЕРЕХВАТ СБОЯ: ${reasonText}. Попытка ${retryCount}/${settings.maxRetries}. Ждем ${settings.interval} сек...`);
 
     setTimeout(() => {
         const toast = document.querySelector('.toast-error, .toastr-error, #toast-container');
@@ -208,6 +210,13 @@ function createUI() {
                         <input type="number" id="vertex_retry_interval" class="text_accent" min="1" max="120" step="1" value="${settings.interval}" 
                             style="width: 100%; padding: 6px 10px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 4px; box-sizing: border-box;">
                     </div>
+
+                    <!-- НОВАЯ НАСТРОЙКА: Лимит попыток авторерола -->
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label for="vertex_max_retries" style="font-size: 0.95em; opacity: 0.9;">Максимальное количество попыток:</label>
+                        <input type="number" id="vertex_max_retries" class="text_accent" min="1" max="20" step="1" value="${settings.maxRetries}" 
+                            style="width: 100%; padding: 6px 10px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 4px; box-sizing: border-box;">
+                    </div>
                     
                 </div>
             </div>
@@ -241,6 +250,15 @@ function createUI() {
             saveSettings();
         }
     });
+
+    // Обработчик изменения максимального количества попыток
+    $drawer.find('#vertex_max_retries').on('input', function() {
+        let val = parseInt($(this).val());
+        if (!isNaN(val) && val > 0) {
+            settings.maxRetries = val;
+            saveSettings();
+        }
+    });
 }
 
 function init() {
@@ -249,7 +267,7 @@ function init() {
     initNetworkHook();
     initGlobalErrorCatch();
     eventSource.on(event_types.GENERATION_ENDED, handleGenerationEnded);
-    console.log(`[${MODULE_NAME}] Расширение переименовано в Авторерол и успешно запущено.`);
+    console.log(`[${MODULE_NAME}] Расширение полностью готово и укомплектовано интерфейсом.`);
 }
 
 eventSource.on(event_types.APP_READY, init);
