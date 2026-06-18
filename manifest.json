@@ -1,0 +1,13 @@
+{
+    "display_name": "Vertex Auto-Retry",
+    "loading_order": 10,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "author": "Developer",
+    "version": "1.0.0",
+    "description": "Автоматически перезапускает генерацию при ошибках, разрыве соединения или цензуре Google Vertex AI.",
+    "homePage": "",
+    "auto_update": false,
+    "minimum_client_version": "1.12.0"
+}
