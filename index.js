@@ -3,7 +3,7 @@ import * as slashModule from '/scripts/slash-commands.js';
 
 const MODULE_NAME = 'vertex_auto_retry';
 let retryCount = 0;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 let isTimeoutActive = false;
 let userAborted = false;
 
