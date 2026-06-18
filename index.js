@@ -34,7 +34,6 @@ function isGoogleProvider() {
     return currentApiText.includes('vertex') || currentApiText.includes('google') || currentApiText.includes('gemini');
 }
 
-// Поиск массива чата для проверок
 function getCurrentChat() {
     if (typeof getContext === 'function') return getContext().chat;
     if (window.SillyTavern && typeof window.SillyTavern.getContext === 'function') return window.SillyTavern.getContext().chat;
@@ -48,16 +47,17 @@ eventSource.on(event_types.MESSAGE_SENT, () => {
     userAborted = false;
 });
 
+// Перехват ручной остановки
 $(document).on('click', '#stop_generation, .stop_generation_btn, [id*="stop"]', () => {
     userAborted = true;
     console.log(`[${MODULE_NAME}] Пользователь вручную остановил генерацию. Автоповтор заблокирован.`);
     setTimeout(() => { userAborted = false; }, 3000);
 });
 
-// БЕЗОПАСНЫЙ ЗАПУСК: используем /generate вместо разрушительного /regenerate
+// ИСПРАВЛЕНО: Возвращена валидная команда /regenerate
 async function triggerRetry() {
     if (userAborted) return;
-    const command = '/generate'; 
+    const command = '/regenerate'; 
     if (slashModule && slashModule.executeSlashCommandsAsync) {
         await slashModule.executeSlashCommandsAsync(command);
     } else if (slashModule && slashModule.executeSlashCommands) {
@@ -77,12 +77,12 @@ function handleFailureDetected(reasonText) {
         return;
     }
 
-    // ЖЕЛЕЗНЫЙ ЩИТ: Если бот уже успешно ответил текстом — это НЕ ошибка генерации текста. Игнорируем!
+    // Железный щит: если в чате уже есть нормальный текст от бота — выходим
     const currentChat = getCurrentChat();
     if (currentChat && currentChat.length > 0) {
         const lastMessage = currentChat[currentChat.length - 1];
         if (lastMessage.is_user === false && lastMessage.mes && lastMessage.mes.trim().length > 0) {
-            console.log(`[${MODULE_NAME}] Текст бота успешно сгенерирован. Ошибка вызвана сторонним модулем (картинки/плагины). Ретрай отменен.`);
+            console.log(`[${MODULE_NAME}] Текст бота на месте. Запрос проигнорирован.`);
             return;
         }
     }
@@ -114,7 +114,6 @@ function handleFailureDetected(reasonText) {
 function initGlobalErrorCatch() {
     window.addEventListener('unhandledrejection', (event) => {
         if (!settings.enabled || isTimeoutActive || userAborted) return;
-        
         const errorMsg = event.reason?.message || String(event.reason || '');
         if (errorMsg.toLowerCase().includes('candidate text empty')) {
             handleFailureDetected('Цензура Google Vertex (Candidate text empty)');
@@ -123,7 +122,6 @@ function initGlobalErrorCatch() {
 
     window.addEventListener('error', (event) => {
         if (!settings.enabled || isTimeoutActive || userAborted) return;
-        
         const errorMsg = event.message || '';
         if (errorMsg.toLowerCase().includes('candidate text empty')) {
             handleFailureDetected('Цензура Google Vertex (Candidate text empty)');
@@ -136,8 +134,6 @@ function initNetworkHook() {
 
     window.fetch = async function (...args) {
         const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-        
-        // СТРОГИЙ ФИЛЬТР URL: Ловим ТОЛЬКО внутренние запросы текстовой генерации мессенджера
         const isGenerationUrl = url.includes('/api/backends/chat-completions') || url.includes('/api/backends/text-completions');
 
         try {
@@ -275,7 +271,7 @@ function init() {
     initNetworkHook();
     initGlobalErrorCatch();
     eventSource.on(event_types.GENERATION_ENDED, handleGenerationEnded);
-    console.log(`[${MODULE_NAME}] Абсолютно безопасная версия запущена.`);
+    console.log(`[${MODULE_NAME}] Стабильная версия успешно инициализирована.`);
 }
 
 eventSource.on(event_types.APP_READY, init);
