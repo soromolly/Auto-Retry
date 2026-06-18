@@ -37,8 +37,9 @@ eventSource.on(event_types.MESSAGE_SENT, () => {
     retryCount = 0;
 });
 
+// ИСПРАВЛЕНО: Теперь используем официальную команду /regenerate вместо /retry
 async function triggerRetry() {
-    const command = '/retry';
+    const command = '/regenerate';
     if (slashModule && slashModule.executeSlashCommandsAsync) {
         await slashModule.executeSlashCommandsAsync(command);
     } else if (slashModule && slashModule.executeSlashCommands) {
@@ -53,7 +54,6 @@ async function triggerRetry() {
     }
 }
 
-// Единый обработчик команды перезапуска
 function handleFailureDetected(reasonText) {
     if (!settings.enabled || isTimeoutActive || !isGoogleProvider()) return;
 
@@ -68,7 +68,7 @@ function handleFailureDetected(reasonText) {
 
     console.log(`[${MODULE_NAME}] СЕТЕВОЙ ПЕРЕХВАТ: ${reasonText}. Ждем ${settings.interval} сек...`);
 
-    // Мягко закрываем всплывающие окна ошибок в интерфейсе, если они вылезли
+    // Закрываем плашки ошибок, чтобы не захламлять экран
     setTimeout(() => {
         const toast = document.querySelector('.toast-error, .toastr-error, #toast-container');
         if (toast && typeof toast.click === 'function') toast.click();
@@ -80,7 +80,6 @@ function handleFailureDetected(reasonText) {
     }, settings.interval * 1000);
 }
 
-// ГЛОБАЛЬНЫЙ ПЕРЕХВАТ СЕТЕВЫХ ЗАПРОСОВ (Глушит любые сбои Node.js на корню)
 function initNetworkHook() {
     const originalFetch = window.fetch;
 
@@ -88,22 +87,18 @@ function initNetworkHook() {
         try {
             const response = await originalFetch.apply(this, args);
             
-            // Если сервер вернул HTTP-код 429 (Too Many Requests), реагируем мгновенно
             if (response.status === 429) {
                 handleFailureDetected('Сервер вернул HTTP статус 429');
                 return response;
             }
 
-            // Проверяем ответы от API генерации SillyTavern
             const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
             if (url.includes('/api/')) {
-                // Клонируем поток ответа, чтобы не нарушать работу основного кода ST
                 const clone = response.clone();
                 
                 clone.text().then(text => {
                     if (text) {
                         const lowText = text.toLowerCase();
-                        // Ищем маркеры критической ошибки Google прямо внутри сырых данных от сервера
                         if (lowText.includes('429') || lowText.includes('capacity') || lowText.includes('api_error')) {
                             handleFailureDetected('Обнаружена ошибка 429/Capacity в теле ответа сервера');
                         }
@@ -113,7 +108,6 @@ function initNetworkHook() {
 
             return response;
         } catch (error) {
-            // Перехват падения сети (например, если Термукс на секунду потерял коннект)
             handleFailureDetected(`Сбой сетевого запроса: ${error.message}`);
             throw error;
         }
