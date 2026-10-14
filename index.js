@@ -5,6 +5,7 @@ const MODULE_NAME = 'vertex_auto_retry';
 let retryCount = 0;
 let isTimeoutActive = false;
 let userAborted = false;
+let isSwipeAttempt = false; // Флаг: была ли попытка свайпа
 
 let settings = {
     enabled: true,
@@ -42,9 +43,11 @@ function getCurrentChat() {
     return null;
 }
 
+// Сброс флагов при отправке нового сообщения
 eventSource.on(event_types.MESSAGE_SENT, () => {
     retryCount = 0;
     userAborted = false;
+    isSwipeAttempt = false; 
 });
 
 // Перехват ручной остановки
@@ -54,10 +57,34 @@ $(document).on('click', '#stop_generation, .stop_generation_btn, [id*="stop"]', 
     setTimeout(() => { userAborted = false; }, 3000);
 });
 
-// ИСПРАВЛЕНО: Возвращена валидная команда /regenerate
+// Отслеживание попыток свайпа (кнопки)
+$(document).on('click', '#swipe_right, #swipe_left', () => {
+    isSwipeAttempt = true;
+    console.log(`[${MODULE_NAME}] Обнаружено нажатие свайпа (кнопка).`);
+});
+
+// Отслеживание попыток перегенерации (кнопки)
+$(document).on('click', '#regenerate_button, #option_regenerate', () => {
+    isSwipeAttempt = false;
+    console.log(`[${MODULE_NAME}] Обнаружено нажатие перегенерации (кнопка).`);
+});
+
+// Отслеживание свайпов с клавиатуры (Alt + стрелки)
+document.addEventListener('keydown', (e) => {
+    if (e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+        isSwipeAttempt = true;
+        console.log(`[${MODULE_NAME}] Обнаружено нажатие свайпа (клавиатура).`);
+    }
+});
+
+// ИСПРАВЛЕНО: Выбор правильной команды
 async function triggerRetry() {
     if (userAborted) return;
-    const command = '/regenerate'; 
+    
+    // Если была попытка свайпа, используем /swipe, иначе /regenerate
+    const command = isSwipeAttempt ? '/swipe' : '/regenerate';
+    console.log(`[${MODULE_NAME}] Выполняем команду: ${command} (isSwipeAttempt: ${isSwipeAttempt})`);
+    
     if (slashModule && slashModule.executeSlashCommandsAsync) {
         await slashModule.executeSlashCommandsAsync(command);
     } else if (slashModule && slashModule.executeSlashCommands) {
@@ -115,16 +142,24 @@ function initGlobalErrorCatch() {
     window.addEventListener('unhandledrejection', (event) => {
         if (!settings.enabled || isTimeoutActive || userAborted) return;
         const errorMsg = event.reason?.message || String(event.reason || '');
-        if (errorMsg.toLowerCase().includes('candidate text empty')) {
+        const lowErrorMsg = errorMsg.toLowerCase();
+        
+        if (lowErrorMsg.includes('candidate text empty')) {
             handleFailureDetected('Цензура Google Vertex (Candidate text empty)');
+        } else if (lowErrorMsg.includes('bad gateway') || lowErrorMsg.includes('502')) {
+            handleFailureDetected('Ошибка сервера 502 (Bad Gateway)');
         }
     });
 
     window.addEventListener('error', (event) => {
         if (!settings.enabled || isTimeoutActive || userAborted) return;
         const errorMsg = event.message || '';
-        if (errorMsg.toLowerCase().includes('candidate text empty')) {
+        const lowErrorMsg = errorMsg.toLowerCase();
+        
+        if (lowErrorMsg.includes('candidate text empty')) {
             handleFailureDetected('Цензура Google Vertex (Candidate text empty)');
+        } else if (lowErrorMsg.includes('bad gateway') || lowErrorMsg.includes('502')) {
+            handleFailureDetected('Ошибка сервера 502 (Bad Gateway)');
         }
     });
 }
@@ -140,8 +175,15 @@ function initNetworkHook() {
             const response = await originalFetch.apply(this, args);
             
             if (isGenerationUrl) {
+                // Обработка 429 (превышение лимитов)
                 if (response.status === 429) {
                     handleFailureDetected('Сервер вернул статус 429 (Превышение лимитов)');
+                    return response;
+                }
+
+                // Обработка 502 и 503 (Bad Gateway / Service Unavailable)
+                if (response.status === 502 || response.status === 503) {
+                    handleFailureDetected(`Сервер вернул статус ${response.status} (Bad Gateway/Service Unavailable)`);
                     return response;
                 }
 
@@ -152,6 +194,8 @@ function initNetworkHook() {
                             const lowText = text.toLowerCase();
                             if (lowText.includes('429') || lowText.includes('capacity') || lowText.includes('api_error')) {
                                 handleFailureDetected('Ошибка сервера в структуре JSON ответа');
+                            } else if (lowText.includes('bad gateway') || lowText.includes('502')) {
+                                handleFailureDetected('Ошибка сервера (Bad Gateway/502 в ответе)');
                             }
                         }
                     }).catch(() => {});
@@ -186,6 +230,7 @@ async function handleGenerationEnded() {
         handleFailureDetected('Цензура или обрыв стрима (абсолютно пустой ответ)');
     } else if (lastMessage.is_user === false) {
         retryCount = 0;
+        isSwipeAttempt = false; // Сбрасываем флаг после успешной генерации
     }
 }
 
